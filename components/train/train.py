@@ -44,7 +44,6 @@ def main():
 
     # Extracting the label column
     y_train = train_df.pop("target")
-    y_train = y_train.values_ravel()
 
     # convert the dataframe values to array
     X_train = train_df.values
@@ -54,7 +53,6 @@ def main():
 
     # Extracting the label column
     y_test = test_df.pop("target")
-    y_test = y_test.values_ravel()
 
     # convert the dataframe values to array
     X_test = test_df.values

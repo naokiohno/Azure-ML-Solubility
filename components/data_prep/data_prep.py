@@ -31,7 +31,7 @@ def main():
 
     print("input data:", args.data)
 
-    sol_df = pd.read_csv(args.data, header=1, index_col=0)
+    sol_df = pd.read_csv(args.data, header=0, index_col=0)
 
     mlflow.log_metric("num_samples", sol_df.shape[0])
     mlflow.log_metric("num_features", sol_df.shape[1] - 1)
@@ -47,10 +47,10 @@ def main():
                   ('remove_zv', VarianceThreshold())]
 
     solTrainX = sol_train_df.drop(columns=['target'])
-    solTrainY = sol_train_df.filter('target')
+    solTrainY = sol_train_df.filter(['target'])
 
     solTestX = sol_test_df.drop(columns=['target'])
-    solTestY = sol_test_df.filter('target')
+    solTestY = sol_test_df.filter(['target'])
 
     pipe = Pipeline(estimators)
     pipe.fit(solTrainX)

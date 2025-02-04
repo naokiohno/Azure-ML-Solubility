@@ -115,3 +115,143 @@ train_component = ml_client.create_or_update(train_component)
 print(
     f"Component {train_component.name} with Version {train_component.version} is registered"
 )
+
+# Create pipeline ------------------------------------------------------------------------------------------------------
+
+# the dsl decorator tells the sdk that we are defining an Azure ML pipeline
+from azure.ai.ml import dsl, Input, Output
+
+@dsl.pipeline(
+    compute="serverless",
+    description="E2E data_prep-train pipeline",
+)
+def solubility_pipeline(
+    pipeline_job_data_input,
+    pipeline_job_test_train_ratio,
+    pipeline_job_learning_rate,
+    pipeline_job_registered_model_name,
+):
+    # using data_prep_function like a python call with its own inputs
+    data_prep_job = data_prep_component(
+        data=pipeline_job_data_input,
+        test_train_ratio=pipeline_job_test_train_ratio,
+    )
+
+    # using train_func like a python call with its own inputs
+    train_job = train_component(
+        train_data=data_prep_job.outputs.train_data,  # note: using outputs from previous step
+        test_data=data_prep_job.outputs.test_data,  # note: using outputs from previous step
+        learning_rate=pipeline_job_learning_rate,  # note: using a pipeline input as parameter
+        registered_model_name=pipeline_job_registered_model_name,
+    )
+
+    # a pipeline returns a dictionary of outputs
+    # keys will code for the pipeline output identifier
+    return {
+        "pipeline_job_train_data": data_prep_job.outputs.train_data,
+        "pipeline_job_test_data": data_prep_job.outputs.test_data,
+    }
+
+registered_model_name = "solubility_model"
+
+# Let's instantiate the pipeline with the parameters of our choice
+pipeline = solubility_pipeline(
+    pipeline_job_data_input=Input(type="uri_file", path=solubility_data.path),
+    pipeline_job_test_train_ratio=0.25,
+    pipeline_job_learning_rate=0.05,
+    pipeline_job_registered_model_name=registered_model_name,
+)
+
+# Submit the job -------------------------------------------------------------------------------------------------------
+
+import webbrowser
+
+# submit the pipeline job
+pipeline_job = ml_client.jobs.create_or_update(
+    pipeline,
+    # Project's name
+    experiment_name="e2e_solubility_registered_components",
+)
+# open the pipeline in web browser
+webbrowser.open(pipeline_job.studio_url)
+
+# Create online endpoint and deploy model ------------------------------------------------------------------------------
+
+import uuid
+
+# Creating a unique name for the endpoint
+online_endpoint_name = "credit-endpoint-" + str(uuid.uuid4())[:8]
+
+from azure.ai.ml.entities import (
+    ManagedOnlineEndpoint,
+    ManagedOnlineDeployment,
+    Model,
+    Environment,
+)
+
+# create an online endpoint
+endpoint = ManagedOnlineEndpoint(
+    name=online_endpoint_name,
+    description="this is an online endpoint",
+    auth_mode="key",
+    tags={
+        "training_dataset": "credit_defaults",
+        "model_type": "sklearn.GradientBoostingClassifier",
+    },
+)
+
+endpoint_result = ml_client.begin_create_or_update(endpoint).result()
+
+print(
+    f"Endpint {endpoint_result.name} provisioning state: {endpoint_result.provisioning_state}"
+)
+
+
+endpoint = ml_client.online_endpoints.get(name=online_endpoint_name)
+
+print(
+    f'Endpint "{endpoint.name}" with provisioning state "{endpoint.provisioning_state}" is retrieved'
+)
+
+# Deploy model to endpoint ------------------------
+
+# Let's pick the latest version of the model
+latest_model_version = max(
+    [int(m.version) for m in ml_client.models.list(name=registered_model_name)]
+)
+
+# picking the model to deploy. Here we use the latest version of our registered model
+model = ml_client.models.get(name=registered_model_name, version=latest_model_version)
+
+
+# create an online deployment.
+blue_deployment = ManagedOnlineDeployment(
+    name="blue",
+    endpoint_name=online_endpoint_name,
+    model=model,
+    instance_type="Standard_F4s_v2",
+    instance_count=1,
+)
+
+blue_deployment_results = ml_client.online_deployments.begin_create_or_update(
+    blue_deployment
+).result()
+
+print(
+    f"Deployment {blue_deployment_results.name} provisioning state: {blue_deployment_results.provisioning_state}"
+)
+
+# Testing model
+deploy_dir = "./deploy"
+
+# Test deployed model --------------------------------------------------------------------------------------------------
+
+ml_client.online_endpoints.invoke(
+    endpoint_name=online_endpoint_name,
+    request_file="./deploy/sample-request.json",
+    deployment_name="blue",
+)
+
+# Delete endpoint
+ml_client.online_endpoints.begin_delete(name=online_endpoint_name)
+
