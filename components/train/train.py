@@ -1,6 +1,6 @@
 import argparse
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import classification_report
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.metrics import root_mean_squared_error
 import os
 import pandas as pd
 import mlflow
@@ -43,7 +43,8 @@ def main():
     train_df = pd.read_csv(select_first_file(args.train_data))
 
     # Extracting the label column
-    y_train = train_df.pop("default payment next month")
+    y_train = train_df.pop("target")
+    y_train = y_train.values_ravel()
 
     # convert the dataframe values to array
     X_train = train_df.values
@@ -52,33 +53,34 @@ def main():
     test_df = pd.read_csv(select_first_file(args.test_data))
 
     # Extracting the label column
-    y_test = test_df.pop("default payment next month")
+    y_test = test_df.pop("target")
+    y_test = y_test.values_ravel()
 
     # convert the dataframe values to array
     X_test = test_df.values
 
     print(f"Training with data of shape {X_train.shape}")
 
-    clf = GradientBoostingClassifier(
+    regressor = GradientBoostingRegressor(
         n_estimators=args.n_estimators, learning_rate=args.learning_rate
     )
-    clf.fit(X_train, y_train)
+    regressor.fit(X_train, y_train)
 
-    y_pred = clf.predict(X_test)
+    y_pred = regressor.predict(X_test)
 
-    print(classification_report(y_test, y_pred))
+    print(root_mean_squared_error(y_test, y_pred))
 
     # Registering the model to the workspace
     print("Registering the model via MLFlow")
     mlflow.sklearn.log_model(
-        sk_model=clf,
+        sk_model=regressor,
         registered_model_name=args.registered_model_name,
         artifact_path=args.registered_model_name,
     )
 
     # Saving the model to a file
     mlflow.sklearn.save_model(
-        sk_model=clf,
+        sk_model=regressor,
         path=os.path.join(args.model, "trained_model"),
     )
 
