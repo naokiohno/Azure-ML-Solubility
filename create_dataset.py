@@ -13,4 +13,4 @@ solTrain = pd.concat([solTrainX, solTrainY], axis=1)
 solTest = pd.concat([solTestX, solTestY], axis=1)
 
 solubility = pd.concat([solTrain, solTest])
-pd.DataFrame.to_csv(solubility, 'data/solubility_full.csv')
+pd.DataFrame.to_csv(solubility, 'data/solubility_full.csv', index=False)
